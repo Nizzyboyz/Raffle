@@ -1,0 +1,135 @@
+/*  RaffleDetails.css  */
+
+/* ---------- Overall Layout ---------- */
+.raffle-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+  color: #fff;
+  background: #000000;
+  padding: 2rem;
+}
+
+/* ---------- Left Column ---------- */
+.raffle-left {
+  flex: 0 0 260px;          /* fixed width */
+  text-align: center;
+}
+
+.raffle-img {
+  width: 100%;
+  height: auto;
+  border-radius: 2px;
+  margin-bottom: 1.5rem;
+}
+
+.raffle-title {
+  font-family: Georgia, serif;
+  font-style: italic;
+  color: #ffd700;
+  margin-bottom: 2rem;
+}
+
+.buy-btn {
+  background: #5864c7;
+  color: #fff;
+  border: none;
+  border-radius: 9999px;   /* pill shape */
+  padding: 1rem 2.5rem;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.buy-btn:hover:enabled {
+  transform: scale(1.05);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.25);
+}
+
+.buy-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- Right Column ---------- */
+.raffle-right {
+  flex: 1 1 400px;
+  display: flex;            /* vertical stack */
+  flex-direction: column;
+  min-height: 350px;        /* ensures space for stats row */
+}
+
+.raffle-desc {
+  font-size: 1.2rem;
+  line-height: 1.6;
+  margin-bottom: 2rem;
+  max-width: 60ch;
+}
+
+/* ---------- Stats Row ---------- */
+.stats-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: auto;         /* push to bottom of column */
+}
+
+.stat {
+  flex: 1 1 160px;
+  background: #4d56a0;
+  border-radius: 4px;
+  padding: 1rem;
+  text-align: center;
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #d0d6ff;
+}
+
+.stat-value {
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: #fff;
+  margin-top: 0.25rem;
+}
+
+/* ---------- Local Status Message ---------- */
+.local-msg {
+  background: #222;
+  color: yellow;
+  padding: 10px;
+  margin-top: 1.5rem;
+  text-align: center;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 768px) {
+  .raffle-detail {
+    flex-direction: column;
+    align-items: center;
+  }
+  .raffle-left {
+    flex: none;
+  }
+  .raffle-right {
+    flex: none;
+    width: 100%;
+  }
+}
+
+.restart-btn {
+  margin-top: 1rem;
+  background: #FFD700;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  font-weight: bold;
+  cursor: pointer;
+}
+.restart-btn:hover {
+  background: #FFC300;
+}
+

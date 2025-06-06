@@ -1,0 +1,133 @@
+/* CreateRaffle.css */
+
+/* Overall container */
+.create-raffle-container {
+  max-width: 700px;
+  margin: 40px auto;
+  padding: 24px;
+  border-radius: 12px;
+  color: #fff;
+
+  /* Subtle gradient background */
+  background: linear-gradient(135deg, #1e1e1e 0%, #2b2b2b 100%);
+
+  /* Larger box shadow for a “raised card” look */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Heading */
+.create-raffle-container h2 {
+  text-align: center;
+  margin-bottom: 24px;
+  color: #ffdd57; /* golden color */
+  font-size: 1.8rem;
+  letter-spacing: 0.6px;
+}
+
+/* The form container */
+.create-raffle-form {
+  display: grid;
+  /* 2 columns on larger screens; single column on narrower screens */
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-gap: 1rem;
+}
+
+/* Each label+input block */
+.create-raffle-form label {
+  display: flex;
+  flex-direction: column;
+  font-weight: 500;
+  color: #ccc;
+}
+
+/* Input & textarea basics */
+.create-raffle-form input,
+.create-raffle-form textarea {
+  margin-top: 5px;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #2c2c2c;
+  color: #fff;
+  font-size: 0.95rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  resize: vertical;
+}
+
+/* Placeholder styling */
+.create-raffle-form ::placeholder {
+  color: #999;
+}
+
+/* Focus effect */
+.create-raffle-form input:focus,
+.create-raffle-form textarea:focus {
+  outline: none;
+  border-color: #ffdd57;
+  box-shadow: 0 0 4px #ffdd57;
+}
+
+/* Creation Fee label or help text */
+.creation-fee-label {
+  grid-column: 1 / -1;
+  margin-top: 0.5rem;
+  color: #bbb;
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
+/* Buttons container (full width below the grid) */
+.create-raffle-buttons {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  margin-top: 20px;
+}
+
+/* The form's main button styling */
+.create-raffle-buttons button {
+  padding: 0.65rem 1.2rem;
+  background: #3070f0;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+/* Hover/active states */
+.create-raffle-buttons button:hover {
+  background: #1950a8;
+  transform: translateY(-1px);
+}
+
+.create-raffle-buttons button:active {
+  transform: translateY(0);
+}
+
+/* Cancel or secondary button */
+.create-raffle-buttons button.cancel-btn {
+  background: #666;
+}
+.create-raffle-buttons button.cancel-btn:hover {
+  background: #444;
+}
+
+/* Responsive adjustments for smaller devices */
+@media (max-width: 480px) {
+  .create-raffle-container {
+    margin: 20px;
+    padding: 16px;
+  }
+
+  .create-raffle-form {
+    grid-template-columns: 1fr;
+  }
+
+  .create-raffle-buttons {
+    flex-direction: column;
+    gap: 10px;
+  }
+}
