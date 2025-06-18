@@ -1,270 +1,181 @@
-// src/CreateRaffle.jsx
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { ethers } from "ethers";
-import "./CreateRaffle.css";
+import { useNavigate } from "react-router-dom";
+import { RAFFLE_FACTORY_ADDRESS, RAFFLE_FACTORY_ABI } from "./contract";
+import "./Main.css";          // << we’ll add wizard styles there
 
-// RaffleFactory info
-import {
-  RAFFLE_FACTORY_ADDRESS,
-  RAFFLE_FACTORY_ABI,
-} from "./contract";
+export default function CreateRaffle({ signer, provider, setStatusMessage }) {
+  const nav = useNavigate();
 
-function CreateRaffle({ signer, provider, setStatusMessage }) {
-  const navigate = useNavigate();
-
-  // ----------------------------------------------
-  // Form fields (the four settings + metadata)
-  // ----------------------------------------------
-  const [ticketSizeMatic, setTicketSizeMatic] = useState("");
-  const [numberRange, setNumberRange]         = useState("");
-  const [houseTake, setHouseTake]             = useState("");
-  const [raffleDuration, setRaffleDuration]   = useState("");
-
-  // Metadata fields
-  const [raffleName, setRaffleName]   = useState("");
-  const [raffleImage, setRaffleImage] = useState("");
-  const [raffleDesc, setRaffleDesc]   = useState("");
-
-  // Creation fee from factory (in Wei)
+  /* ------------- chain values ------------- */
   const [creationFee, setCreationFee] = useState("0");
-  const [loadingFee, setLoadingFee]   = useState(false);
-  const [nativePriceUSD, setNativePriceUSD] = useState(null);
+  const [feeUSD,       setFeeUSD]      = useState("");
+  const [loadingFee,   setLoadingFee]  = useState(true);
 
-  function updateStatus(msg) {
-    if (setStatusMessage) {
-      setStatusMessage(msg);
-    } else {
-      console.log("[CreateRaffle] " + msg);
-    }
-  }
-
-  // ----------------------------------------------------------
-  // On mount: fetch the factory's creationFee and MATIC→USD
-  // ----------------------------------------------------------
   useEffect(() => {
-    fetchCreationFee();
-    fetch("https://api.coingecko.com/api/v3/simple/price?ids=matic-network&vs_currencies=usd")
-      .then((res) => res.json())
-      .then((data) => {
-        setNativePriceUSD(data["matic-network"].usd);
-      })
-      .catch(console.error);
+    (async () => {
+      /* fetch fee */
+      const prov = provider ?? new ethers.providers.JsonRpcProvider(
+        "https://polygon-mainnet.g.alchemy.com/v2/Ddvu7Q1ue3u6HP_LUslVpoG7JzfPhN_7"
+      );
+      const fac  = new ethers.Contract(
+        RAFFLE_FACTORY_ADDRESS,
+        RAFFLE_FACTORY_ABI,
+        prov
+      );
+      const fee  = await fac.creationFee();
+      setCreationFee(fee.toString());
+
+      /* usd price */
+      try {
+        const { ["matic-network"]: { usd } } =
+          await fetch("https://api.coingecko.com/api/v3/simple/price?ids=matic-network&vs_currencies=usd")
+            .then(r => r.json());
+        setFeeUSD((parseFloat(ethers.utils.formatEther(fee)) * usd).toFixed(2));
+      } catch (_) { /* ignore */ }
+      setLoadingFee(false);
+    })();
   }, []);
 
-  async function fetchCreationFee() {
-    setLoadingFee(true);
-    try {
-      const _provider =
-        provider ||
-        new ethers.providers.JsonRpcProvider(
-          "https://polygon-mainnet.g.alchemy.com/v2/3V4Ph7BR2nsUxGVCYwiLQoh3wOl1Q9R5"
-        );
-      const factoryContract = new ethers.Contract(
-        RAFFLE_FACTORY_ADDRESS,
-        RAFFLE_FACTORY_ABI,
-        _provider
+  /* ------------- form state ------------- */
+  const [form, setForm] = useState({
+    name:"", desc:"", image:"",
+    ticket:"", range:"", take:"", duration:""
+  });
+
+  function update(k, v){ setForm({ ...form, [k]:v }); }
+
+  /* ------------- wizard state ------------- */
+  const steps = ["Basics","Pricing","Rules","Media","Confirm"];
+  const [step, setStep] = useState(0);
+  const pct  = ((step+1)/steps.length)*100;
+
+  /* ------------- submit ------------- */
+  async function handleSubmit(){
+    if (!signer) { setStatusMessage?.("Connect wallet first"); return; }
+
+    const settings = {
+      ticketSize: ethers.utils.parseEther(form.ticket || "0").toString(),
+      numberRange: form.range,
+      houseTake:   form.take,
+      raffleDuration: 0               // overwritten by param
+    };
+
+    try{
+      const fac = new ethers.Contract(
+        RAFFLE_FACTORY_ADDRESS, RAFFLE_FACTORY_ABI, signer
       );
-      const feeBN = await factoryContract.creationFee();
-      setCreationFee(feeBN.toString());
-    } catch (err) {
-      console.error("Error fetching creation fee:", err);
-    }
-    setLoadingFee(false);
-  }
-
-  // ----------------------------------------------------------
-  // On form submit: create a new raffle
-  // ----------------------------------------------------------
-  async function handleCreate(e) {
-    e.preventDefault();
-
-    if (!signer) {
-      return updateStatus("Please connect your wallet first.");
-    }
-
-    try {
-      updateStatus("Creating raffle...");
-
-      const factoryContract = new ethers.Contract(
-        RAFFLE_FACTORY_ADDRESS,
-        RAFFLE_FACTORY_ABI,
-        signer
+      const tx = await fac.createNewRaffle(
+        settings, form.name, form.image, form.desc, parseInt(form.duration,10),
+        { value: creationFee }
       );
-
-      // Convert ticketSize from MATIC to Wei
-      const ticketSizeWei = ethers.utils.parseEther(ticketSizeMatic || "0");
-
-      // Build settings object
-      const settings = {
-        ticketSize: ticketSizeWei.toString(),
-        numberRange: numberRange || "0",
-        houseTake: houseTake || "0",
-        raffleDuration: 0, // will be overwritten by the next param
-      };
-
-      // Call the factory
-      const tx = await factoryContract.createNewRaffle(
-        settings,
-        raffleName,
-        raffleImage,
-        raffleDesc,
-        parseInt(raffleDuration, 10),
-        {
-          value: creationFee || "0",
-        }
-      );
-
-      updateStatus("Tx sent. Waiting for confirmation...");
+      setStatusMessage?.("Tx sent…");
       await tx.wait();
-
-      updateStatus(`Raffle Created! Tx: ${tx.hash}`);
-      navigate("/");
-    } catch (err) {
-      console.error("handleCreate error:", err);
-      let msg = "Transaction failed or rejected.";
-      if (err.reason) {
-        msg = `Transaction failed: ${err.reason}`;
-      } else if (err.data?.message) {
-        msg = `Transaction failed: ${err.data.message}`;
-      }
-      updateStatus(msg);
+      setStatusMessage?.("Raffle created!");
+      nav("/");
+    }catch(e){
+      console.error(e);
+      setStatusMessage?.("Tx failed – see console");
     }
   }
 
-  // ----------------------------------------------------------
-  // Compute USD equivalent for the creation fee
-  // ----------------------------------------------------------
-  let feeInMatic = 0;
-  if (creationFee) {
-    feeInMatic = parseFloat(ethers.utils.formatEther(creationFee));
-  }
-  let feeInUSD = null;
-  if (nativePriceUSD !== null && nativePriceUSD !== undefined) {
-    feeInUSD = (feeInMatic * nativePriceUSD).toFixed(2);
-  }
-  let usdDisplay = null;
-  if (feeInUSD) {
-    usdDisplay = <> (≈ ${feeInUSD})</>;
-  }
-
-  // ----------------------------------------------------------
-  // Render
-  // ----------------------------------------------------------
+  /* ------------- render ------------- */
   return (
-    <div className="create-raffle-container">
-      <h2>Create a New Raffle</h2>
+    
+    <div className="wizard-wrap">
+      {/* progress bar */}
+      <div className="wizard-progress">
+        <div style={{ width:`${pct}%` }} />
+      </div>
 
-      <form className="create-raffle-form" onSubmit={handleCreate}>
-        {/* Raffle Name */}
-        <label>
-          Raffle Name:
-          <input
-            type="text"
-            value={raffleName}
-            onChange={(e) => setRaffleName(e.target.value)}
-            required
-            placeholder="Enter a name"
-          />
-        </label>
-
-        {/* Raffle Description */}
-        <label>
-          Raffle Description:
-          <textarea
-            rows={3}
-            value={raffleDesc}
-            onChange={(e) => setRaffleDesc(e.target.value)}
-            placeholder="Short description"
-          />
-        </label>
-
-        {/* Ticket Price (MATIC) */}
-        <label>
-          Ticket Price (MATIC):
-          <input
-            type="text"
-            placeholder="e.g. 0.001"
-            value={ticketSizeMatic}
-            onChange={(e) => setTicketSizeMatic(e.target.value)}
-            required
-          />
-        </label>
-
-        {/* Number Range */}
-        <label>
-          Number Range:
-          <input
-            type="number"
-            placeholder="Max ticket number (e.g. 1000)"
-            value={numberRange}
-            onChange={(e) => setNumberRange(e.target.value)}
-            required
-          />
-        </label>
-
-        {/* House Take (%) */}
-        <label>
-          House Take (%):
-          <input
-            type="number"
-            placeholder="0 to 100"
-            value={houseTake}
-            onChange={(e) => setHouseTake(e.target.value)}
-            required
-          />
-        </label>
-
-        {/* Raffle Duration */}
-        <label>
-          Raffle Duration (sec):
-          <input
-            type="number"
-            placeholder="e.g. 86400 for 1 day"
-            value={raffleDuration}
-            onChange={(e) => setRaffleDuration(e.target.value)}
-            required
-          />
-        </label>
-
-        {/* Raffle Image URL */}
-        <label>
-          Raffle Image (URI):
-          <input
-            type="text"
-            value={raffleImage}
-            onChange={(e) => setRaffleImage(e.target.value)}
-            placeholder="ipfs://... or https://..."
-          />
-        </label>
-
-        {/* Creation Fee Display */}
-        <div className="creation-fee-label">
-          {loadingFee ? (
-            "Loading creation fee…"
-          ) : (
-            <>
-              <strong>Creation Fee:</strong> 
-              {feeInMatic.toFixed(4)} MATIC
-              {usdDisplay}
-            </>
-          )}
+      {/* slides container */}
+      <div
+        className="wizard-slider"
+        style={{ transform:`translateX(-${step*100}%)` }}
+      >
+        {/* ----- STEP 0: basics ----- */}
+        <div className="wizard-slide">
+          <h2>Step 1 / 5 — Basics</h2>
+          <label>Raffle name
+            <input value={form.name} onChange={e=>update("name",e.target.value)} />
+          </label>
+          <label>Description
+            <textarea rows={3} value={form.desc}
+              onChange={e=>update("desc",e.target.value)} />
+          </label>
         </div>
 
-        {/* Button Row */}
-        <div className="create-raffle-buttons">
-          <button type="submit">Create Raffle</button>
-          <button
-            type="button"
-            className="cancel-btn"
-            onClick={() => navigate("/")}
-          >
-            Cancel
+        {/* ----- STEP 1: pricing ----- */}
+        <div className="wizard-slide">
+          <h2>Step 2 / 5 — Pricing</h2>
+          <label>Ticket price (MATIC)
+            <input value={form.ticket}
+                   onChange={e=>update("ticket",e.target.value)} />
+          </label>
+          <label>House take %
+            <input value={form.take}
+                   onChange={e=>update("take",e.target.value)} />
+          </label>
+        </div>
+
+        {/* ----- STEP 2: rules ----- */}
+        <div className="wizard-slide">
+          <h2>Step 3 / 5 — Rules</h2>
+          <label>Number range (max ticket #)
+            <input value={form.range}
+                   onChange={e=>update("range",e.target.value)} />
+          </label>
+          <label>Duration (seconds)
+            <input value={form.duration}
+                   onChange={e=>update("duration",e.target.value)} />
+          </label>
+        </div>
+
+        {/* ----- STEP 3: media ----- */}
+        <div className="wizard-slide">
+          <h2>Step 4 / 5 — Image</h2>
+          <label>Image URL (ipfs or https)
+            <input value={form.image}
+                   onChange={e=>update("image",e.target.value)} />
+          </label>
+        </div>
+
+        {/* ----- STEP 4: confirm ----- */}
+        <div className="wizard-slide">
+          <h2>Step 5 / 5 — Review & Pay</h2>
+          <ul className="confirm-list">
+            <li><strong>Name:</strong> {form.name}</li>
+            <li><strong>Ticket:</strong> {form.ticket} MATIC</li>
+            <li><strong>Range:</strong> 1 – {form.range}</li>
+            <li><strong>Duration:</strong> {form.duration}s</li>
+            <li><strong>Creation fee:</strong> {loadingFee
+              ? "…" : `${ethers.utils.formatEther(creationFee)} MATIC (${feeUSD}$)`}</li>
+          </ul>
+        </div>
+      </div>
+
+      {/* nav buttons */}
+      <div className="wizard-nav">
+        {step > 0 && (
+          <button className="wizard-back" onClick={()=>setStep(s=>s-1)}>
+            Back
           </button>
-        </div>
-      </form>
+        )}
+
+        {step < steps.length-1 ? (
+          <button
+            className="wizard-next"
+            disabled={!form.name && step===0}
+            onClick={()=>setStep(s=>s+1)}
+          >
+            Next
+          </button>
+        ) : (
+          <button className="wizard-submit" onClick={handleSubmit}>
+            Create Raffle
+          </button>
+        )}
+      </div>
     </div>
   );
 }
-
-export default CreateRaffle;

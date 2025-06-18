@@ -1,11 +1,10 @@
 // src/App.js
 import React, { useState, useEffect } from "react";
 import { Routes, Route, useNavigate } from "react-router-dom";
-import CommunityRaffles from "./communityRaffles";
 import { ethers } from "ethers";
 import "./Main.css";
 
-// Contract info
+/* ─── Contract info ─── */
 import {
   RAFFLE_CONTRACT_ADDRESS,
   RAFFLE_CONTRACT_ABI,
@@ -13,79 +12,81 @@ import {
   RAFFLE_FACTORY_ABI,
 } from "./contract";
 
-// Components
+/* ─── Components ─── */
 import RaffleDetail from "./RaffleDetail";
 import CreateRaffle from "./CreateRaffle";
+import TopBar       from "./components/topbar";
+import Sidebar      from "./components/sidebar";
+import Profile      from "./profile";        // ⬅ (capital P)
 
+/* ────────────────────────────────────────────────────────── */
 function App() {
-  // --------------------------------------------------------
-  // Wallet / Connection State
-  // --------------------------------------------------------
-  const [provider, setProvider] = useState(null);
-  const [signer, setSigner] = useState(null);
-  const [account, setAccount] = useState("");
-  const [balance, setBalance] = useState("");
+  /* ▸ Wallet state */
+  const [provider, setProvider]   = useState(null);
+  const [signer,   setSigner]     = useState(null);
+  const [account,  setAccount]    = useState("");
+  const [balance,  setBalance]    = useState("");
   const [statusMessage, setStatusMessage] = useState("");
 
-  // Read‑only fallback (Polygon mainnet via Alchemy)
+  /* ▸ Fallback read-only provider */
   const readOnlyProvider = new ethers.providers.JsonRpcProvider(
     "https://polygon-mainnet.g.alchemy.com/v2/Ddvu7Q1ue3u6HP_LUslVpoG7JzfPhN_7"
   );
 
-  // --------------------------------------------------------
-  // Connect / Disconnect Wallet
-  // --------------------------------------------------------
-  async function fetchBalance(_provider, userAddress) {
-    const bal = await _provider.getBalance(userAddress);
-    setBalance(ethers.utils.formatEther(bal));
+  /* ▸ Helper: seconds → “2h 15m” */
+  function formatTime(sec) {
+  const d = Math.floor(sec / 86400);
+  if (d) return `${d}d`;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return h ? `${h}h ${m}m` : `${sec % 60}s`;
+}
+
+  /* ───────── Wallet connect / disconnect ───────── */
+  async function fetchBalance(_provider, userAddr) {
+    const balWei = await _provider.getBalance(userAddr);
+    setBalance(ethers.utils.formatEther(balWei));
   }
 
   async function checkNetwork(_provider) {
-    const network = await _provider.getNetwork();
-    if (network.chainId !== 137) {
-      setStatusMessage(
-        "Warning: You are not connected to Polygon mainnet. Please switch networks in MetaMask."
-      );
+    const net = await _provider.getNetwork();
+    if (net.chainId !== 137) {
+      setStatusMessage("Warning: switch to Polygon mainnet.");
     } else {
-      setStatusMessage(`Connected to Polygon: ${network.name}`);
+      setStatusMessage(`Connected to Polygon: ${net.name}`);
     }
   }
 
   async function connectWallet() {
     if (!window.ethereum) {
-      alert("MetaMask not detected. Please install it.");
+      alert("MetaMask not detected.");
       return;
     }
     try {
-      // Request account access
       await window.ethereum.request({ method: "eth_requestAccounts" });
       const _provider = new ethers.providers.Web3Provider(window.ethereum);
-      const _signer = _provider.getSigner();
-      const accs = await _provider.listAccounts();
-      const userAcc = accs[0] || "";
+      const _signer   = _provider.getSigner();
+      const [addr]    = await _provider.listAccounts();
 
       setProvider(_provider);
       setSigner(_signer);
-      setAccount(userAcc);
+      setAccount(addr);
 
-      await fetchBalance(_provider, userAcc);
+      await fetchBalance(_provider, addr);
       await checkNetwork(_provider);
 
-      // Listen for account or chain changes
       window.ethereum.on("accountsChanged", async (accs) => {
-        if (accs.length > 0) {
+        if (accs.length) {
           setAccount(accs[0]);
-          setStatusMessage(`Account changed: ${accs[0]}`);
           await fetchBalance(_provider, accs[0]);
         } else {
           disconnectWallet();
         }
       });
       window.ethereum.on("chainChanged", () => window.location.reload());
-
     } catch (err) {
       console.error(err);
-      setStatusMessage("User rejected or error occurred while connecting.");
+      setStatusMessage("Wallet connection cancelled / failed.");
     }
   }
 
@@ -96,315 +97,212 @@ function App() {
     setBalance("");
     setProvider(null);
     setSigner(null);
-    setStatusMessage("Disconnected from wallet");
+    setStatusMessage("Disconnected");
   }
 
-  // --------------------------------------------------------
-  // Fetch raffles from chain
-  // --------------------------------------------------------
-  const [raffles, setRaffles] = useState([]);
-  const [loadingRaffles, setLoadingRaffles] = useState(true);
+  /* ───────── Fetch raffles ───────── */
+  const [raffles, setRaffles]       = useState([]);
+  const [loadingRaffles, setLoading] = useState(true);
 
   useEffect(() => {
     const prov = provider || readOnlyProvider;
     if (!prov) return;
 
-    // 1) Factory for count
     const factory = new ethers.Contract(
       RAFFLE_FACTORY_ADDRESS,
       RAFFLE_FACTORY_ABI,
       prov
     );
-    // 2) Raffle contract for data
-    const raffleContract = new ethers.Contract(
+    const raffleC = new ethers.Contract(
       RAFFLE_CONTRACT_ADDRESS,
       RAFFLE_CONTRACT_ABI,
       prov
     );
 
-    const SeedCount = 6;
-
-    async function loadRaffles() {
-      setLoadingRaffles(true);
+    async function load() {
+      setLoading(true);
       try {
-        // a) how many raffles exist?
-        const countBN = await factory.getRaffleCount();
-        const count = countBN.toNumber();
-
-        const arr = [];
+        const count = (await factory.getRaffleCount()).toNumber();
+        const arr   = [];
         for (let i = 0; i < count; i++) {
-          if (i >= SeedCount) continue;
-          // only fetch raffles deployed 
           const [
-            nameOfRaffle,
-            raffleImg,
-            raffleDesc,
-            ticketsSoldBN,
-            currentPrizeBN,
-            timeLeftBN,
-            endedBool,
-          ] = await raffleContract.getRaffleData(i);
+            name, img, desc,
+            soldBN, prizeBN, timeBN, ended
+          ] = await raffleC.getRaffleData(i);
 
           arr.push({
             id: i,
-            name: nameOfRaffle,
-            image: raffleImg,
-            description: raffleDesc,
-            ticketsSold: ticketsSoldBN.toNumber(),
-            prize: ethers.utils.formatEther(currentPrizeBN),
-            timeLeft: timeLeftBN.toNumber(),
-            ended: endedBool,
+            name,
+            image: img,
+            description: desc,
+            ticketsSold: soldBN.toNumber(),
+            prize: ethers.utils.formatEther(prizeBN),
+            timeLeft: timeBN.toNumber(),
+            ended
           });
         }
         setRaffles(arr);
-      } catch (err) {
-        console.error("Error loading raffles:", err);
-        setStatusMessage(
-          err.reason || "Error loading raffles. Check console for details."
-        );
+      } catch (e) {
+        console.error(e);
+        setStatusMessage("Error loading raffles (see console).");
       } finally {
-        setLoadingRaffles(false);
+        setLoading(false);
       }
     }
-
-    loadRaffles();
+    load();
   }, [provider]);
 
-  // --------------------------------------------------------
-  // Buy Ticket Logic
-  // --------------------------------------------------------
+  /* ▸ Buy ticket */
   async function buyTicket(raffleId) {
-    if (!signer) {
-      setStatusMessage("Please connect your wallet first.");
-      return;
-    }
+    if (!signer) { setStatusMessage("Connect wallet first."); return; }
     try {
-      setStatusMessage(`Buying ticket for Raffle #${raffleId}...`);
-
       const contract = new ethers.Contract(
         RAFFLE_CONTRACT_ADDRESS,
         RAFFLE_CONTRACT_ABI,
         signer
       );
+      const data = await contract.raffles(raffleId);
+      const ticketSize = data.ticketSize;
+      const range      = data.numberRange.toNumber();
 
-      // read struct from the public array for that raffle
-      const raffleData = await contract.raffles(raffleId);
-      const ticketSizeWei = raffleData.ticketSize;
-      const numberRange = raffleData.numberRange.toNumber();
-
-      const randomTicketNumber =
-        Math.floor(Math.random() * numberRange) + 1;
-
-      const userBal = await signer.getBalance();
-      if (userBal.lt(ticketSizeWei)) {
-        setStatusMessage("Insufficient MATIC to buy this ticket.");
+      const num   = Math.floor(Math.random() * range) + 1;
+      const bal   = await signer.getBalance();
+      if (bal.lt(ticketSize)) {
+        setStatusMessage("Insufficient MATIC.");
         return;
       }
-
-      // Estimate gas
-      const estimatedGas = await contract.estimateGas.buyTicket(
-        raffleId,
-        randomTicketNumber,
-        { value: ticketSizeWei }
+      const gasEst = await contract.estimateGas.buyTicket(
+        raffleId, num, { value: ticketSize }
       );
-      const gasLimit = estimatedGas.mul(120).div(100);
-
-      // Send transaction
-      const tx = await contract.buyTicket(raffleId, randomTicketNumber, {
-        value: ticketSizeWei,
-        gasLimit,
-      });
+      const tx = await contract.buyTicket(
+        raffleId, num,
+        { value: ticketSize, gasLimit: gasEst.mul(120).div(100) }
+      );
       await tx.wait();
-      setStatusMessage(
-        `Ticket purchased (#${randomTicketNumber})! Tx: ${tx.hash}`
-      );
-
+      setStatusMessage(`Ticket #${num} bought!`);
     } catch (err) {
-      console.error("buyTicket error:", err);
-
-      // Try to parse a more friendly revert reason
-      let message = "Transaction failed.";
-      if (err.reason) {
-        message = `Revert: ${err.reason}`;
-      } else if (err.data?.message) {
-        message = `Revert: ${err.data.message}`;
-      } else if (err.error?.message) {
-        message = `Revert: ${err.error.message}`;
-      }
-      setStatusMessage(message);
+      console.error(err);
+      setStatusMessage("Tx failed – see console.");
     }
   }
 
   const navigate = useNavigate();
 
+  /* ───────── JSX ───────── */
   return (
-    <div className="app">
-      {/* HEADER */}
-      <header>
-  {/* ── left block: title + search + new links ───────────── */}
-  <div className="header-left">
-    <h1>Active Raffles</h1>
+    <div className="app-layout">
+      <Sidebar />
 
-    {/* search */}
-    <form className="search-container" action="#" method="GET">
-      <label htmlFor="search-input" className="visually-hidden">
-        Search Raffles
-      </label>
-      <input
-        type="text"
-        id="search-input"
-        name="q"
-        placeholder="Search Raffles..."
-        aria-label="Search Raffles"
-      />
-      <button type="submit" className="search-button" aria-label="Search">
-        Go
-      </button>
-    </form>
-
-    {/* NEW slim links */}
-    <nav className="top-nav-links">
-      <button
-        className="nav-link"
-        type="button"
-        onClick={() => navigate("/create")}
-      >
-        Create Raffle
-      </button>
-      <button
-        className="nav-link"
-        type="button"
-        onClick={() => navigate("/community")}
-      >
-        User Raffles
-      </button>
-    </nav>
-  </div>
-
-  {/* ── right block: wallet / connect ───────────────────── */}
-  <div className="icon-container">
-    {account ? (
-      <div style={{ marginRight: "20px" }}>
-        <p>Wallet: {account}</p>
-        <p>Balance: {balance} MATIC</p>
-        <button onClick={disconnectWallet}>Disconnect Wallet</button>
-      </div>
-    ) : (
-      <button className="menu-icon" onClick={connectWallet}>
-        Connect Wallet
-      </button>
-    )}
-  </div>
-</header>
-
-
-      {/* STATUS MESSAGE */}
-      {statusMessage && (
-        <div
-          style={{
-            color: "#fff",
-            textAlign: "center",
-            marginTop: "10px",
-            background: "darkcyan",
-            padding: "10px",
-          }}
-        >
-          {statusMessage}
-        </div>
-      )}
-
-      {/* ROUTES */}
-      <Routes>
-        <Route
-          path="/community"
-          element={
-            <CommunityRaffles provider={provider || readOnlyProvider} />
-          }
+      <div className="main-content">
+        <TopBar
+          account={account}
+          connectWallet={connectWallet}
+          disconnectWallet={disconnectWallet}
         />
 
-        <Route
-          path="/"
-          element={
-            <main>
-              {loadingRaffles ? (
-                <p style={{ color: "#fff", textAlign: "center" }}>
+        {statusMessage && (
+          <div className="status-banner">{statusMessage}</div>
+        )}
+
+        <Routes>
+          {/* HOME / OVERVIEW */}
+          <Route
+            path="/"
+            element={
+              loadingRaffles ? (
+                <p style={{ textAlign: "center", color: "#fff" }}>
                   Loading raffles…
                 </p>
               ) : (
                 <div className="container">
-  {raffles.map((r) => (
-    <button
-      key={r.id}
-      className={`box plus ${r.ended ? "raffle-box--ended" : "raffle-box--basic"}`}
-      onClick={() => navigate(`/raffle/${r.id}`)}
-    >
-      <div className="flip-container">
-        <div className="front">
-          {r.image && <img src={r.image} alt={r.name} className="raffle-image" />}
-          <h3>{r.name}</h3>
-        </div>
+                  {raffles.map((r) => (
+                    <div
+                      key={r.id}
+                      className={`raffle-card ${r.ended ? "raffle-ended" : ""}`}
+                      onClick={() => navigate(`/raffle/${r.id}`)}
+                    >
+                      {/* header */}
+                      <div className="raffle-header">
+                        <img
+                          src={r.image || "/placeholder.png"}
+                          alt={r.name}
+                          className="raffle-thumb"
+                        />
+                        <h3 className="raffle-name">{r.name}</h3>
+                      </div>
 
-        <div className="back">
-          <p>Tickets sold: {r.ticketsSold}</p>
-          <p>Prize: {r.prize} MATIC</p>
-          {r.ended ? (
-            <p style={{ color: "yellow" }}>Ended</p>
-          ) : (
-            <>
-              <p>Time left: {r.timeLeft}s</p>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  buyTicket(r.id);
-                }}
-              >
-                Buy Ticket
-              </button>
-            </>
-          )}
-        </div>
-      </div>      
-    </button>     
-  ))}              
-  
-</div>
-              )}
-            </main>
-          }
-        />
+                      {/* stats */}
+                      <p className="raffle-price">{r.prize} MATIC</p>
+                      <p className="raffle-time">
+                        {r.ended ? "Ended" : `${formatTime(r.timeLeft)} left`}
+                      </p>
 
-        <Route
-          path="/raffle/:id"
-          element={
-            <RaffleDetail
-              readOnlyProvider={provider || readOnlyProvider}
-              signer={signer}
-              buyTicket={buyTicket}
-              setGlobalStatus={setStatusMessage}
-            />
-          }
-        />
+                      {!r.ended && (
+                        <button
+                          className="raffle-buy"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            buyTicket(r.id);
+                          }}
+                        >
+                          Buy
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )
+            }
+          />
 
-        <Route
-          path="/create"
-          element={
-            <CreateRaffle
-              signer={signer}
-              provider={provider || readOnlyProvider}
-              setStatusMessage={setStatusMessage}
-            />
-          }
-        />
+          {/* SINGLE RAFFLE */}
+          <Route
+            path="/raffle/:id"
+            element={
+              <RaffleDetail
+                readOnlyProvider={provider || readOnlyProvider}
+                signer={signer}
+                buyTicket={buyTicket}
+                setGlobalStatus={setStatusMessage}
+              />
+            }
+          />
 
-        <Route
-          path="*"
-          element={
-            <div style={{ color: "white", textAlign: "center", marginTop: 30 }}>
-              <h2>404 - Page Not Found</h2>
-            </div>
-          }
-        />
-      </Routes>
+          {/* CREATE RAFFLE */}
+          <Route
+            path="/create"
+            element={
+              <CreateRaffle
+                signer={signer}
+                provider={provider || readOnlyProvider}
+                setStatusMessage={setStatusMessage}
+              />
+            }
+          />
+
+          {/* PROFILE */}
+          <Route
+            path="/profile"
+            element={
+              <Profile
+                account={account}
+                provider={provider || readOnlyProvider}
+                connectWallet={connectWallet}
+              />
+            }
+          />
+
+          {/* 404 */}
+          <Route
+            path="*"
+            element={
+              <div style={{ textAlign: "center", color: "#fff", marginTop: 40 }}>
+                404 – Page Not Found
+              </div>
+            }
+          />
+        </Routes>
+      </div>
     </div>
   );
 }
